@@ -19,7 +19,7 @@ import dirtorch.datasets.downloader as dl
 
 import pickle as pkl
 import hashlib
-
+import pandas as pd
 
 def expand_descriptors(descs, db=None, alpha=0, k=0):
     assert k >= 0 and alpha >= 0, 'k and alpha must be non-negative'
@@ -61,11 +61,15 @@ def extract_image_features(dataset, transforms, net, ret_imgs=False, same_size=F
         net.eval()
 
     tocpu = (lambda x: x.cpu()) if ret_imgs == 'cpu' else (lambda x: x)
-
+    
+    img_names = []
     img_feats = []
     trf_images = []
     with torch.no_grad():
-        for inputs in tqdm.tqdm(loader, desc, total=1+(len(dataset)-1)//batch_size):
+        for temp_inputs in tqdm.tqdm(loader, desc, total=1+(len(dataset)-1)//batch_size):
+            inputs = temp_inputs[0]
+            image_name = temp_inputs[1]
+            img_names.append(image_name[0])
             imgs = inputs[0]
             for i in range(len(imgs)):
                 if flip and flip.pop(0):
@@ -86,13 +90,21 @@ def extract_image_features(dataset, transforms, net, ret_imgs=False, same_size=F
 
     if not same_size:
         torch.backends.cudnn.benchmark = old_benchmark
-
+        
     if ret_imgs:
         if same_size:
             trf_images = torch.cat(trf_images, dim=0)
         return trf_images, img_feats
-    return img_feats
+    return img_feats, img_names
 
+# This time it's num_image x embeddings_size
+def generate_embedding_file(image_list, embeddings,file_path):
+    list_embedding = embeddings.tolist()
+    df = pd.DataFrame( {'image_name': image_list, 'embedding' : list_embedding})
+    df.to_csv(file_path, index=False)
+
+global bdescs
+global qdescs
 
 def eval_model(db, net, trfs, pooling='mean', gemp=3, detailed=False, whiten=None,
                aqe=None, adba=None, threads=8, batch_size=16, save_feats=None,
@@ -112,10 +124,12 @@ def eval_model(db, net, trfs, pooling='mean', gemp=3, detailed=False, whiten=Non
 
         for trfs in trfs_list:
             kw = dict(iscuda=net.iscuda, threads=threads, batch_size=batch_size, same_size='Pad' in trfs or 'Crop' in trfs)
-            bdescs.append(extract_image_features(db, trfs, net, desc="DB", **kw))
+            (db_features,db_image_names) = extract_image_features(db, trfs, net, desc="DB", **kw)
+            bdescs.append(db_features)
 
             # extract query feats
-            qdescs.append(bdescs[-1] if db is query_db else extract_image_features(query_db, trfs, net, desc="query", **kw))
+            (q_features, q_image_names) = extract_image_features(query_db, trfs, net, desc="query", **kw)
+            qdescs.append(bdescs[-1] if db is query_db else q_features)
 
         # pool from multiple transforms (scales)
         bdescs = F.normalize(pool(bdescs, pooling, gemp), p=2, dim=1)
@@ -141,44 +155,25 @@ def eval_model(db, net, trfs, pooling='mean', gemp=3, detailed=False, whiten=Non
         bdescs = expand_descriptors(bdescs, **args.adba)
     if aqe is not None:
         qdescs = expand_descriptors(qdescs, db=bdescs, **args.aqe)
+        
+        
+    #generate_embedding_file(db_image_names, bdescs, '/notebooks/Embeddings/DEEP_Image_Retrieval/caltech101_700_train-dataset-features.csv')
+    #generate_embedding_file(q_image_names, qdescs, '/notebooks/Embeddings/DEEP_Image_Retrieval/caltech101_700_train-query-features.csv')
 
     scores = matmul(qdescs, bdescs)
 
-    del bdescs
-    del qdescs
-
     res = {}
+    
+    df = pd.DataFrame(columns = ['query_path','results_path','query_emb','result_emb','scores'])
 
     try:
-        aps = [db.eval_query_AP(q, s) for q, s in enumerate(tqdm.tqdm(scores, desc='AP'))]
-        if not isinstance(aps[0], dict):
-            aps = [float(e) for e in aps]
-            if detailed:
-                res['APs'] = aps
-            # Queries with no relevants have an AP of -1
-            res['mAP'] = float(np.mean([e for e in aps if e >= 0]))
-        else:
-            modes = aps[0].keys()
-            for mode in modes:
-                apst = [float(e[mode]) for e in aps]
-                if detailed:
-                    res['APs'+'-'+mode] = apst
-                # Queries with no relevants have an AP of -1
-                res['mAP'+'-'+mode] = float(np.mean([e for e in apst if e >= 0]))
-    except NotImplementedError:
-        print(" AP not implemented!")
-
-    try:
-        tops = [db.eval_query_top(q, s) for q, s in enumerate(tqdm.tqdm(scores, desc='top1'))]
-        if detailed:
-            res['tops'] = tops
-        for k in tops[0]:
-            res['top%d' % k] = float(np.mean([top[k] for top in tops]))
-    except NotImplementedError:
-        pass
-
-    return res
-
+        for q,s in enumerate(scores):
+            row = db.eval_query_AP(q, s, bdescs,qdescs[q], q_image_names[q],db_image_names)[1]
+            df = pd.concat([df, pd.DataFrame.from_records([row])])
+        #df.to_csv('/notebooks/Embeddings/DEEP_Image_Retrieval/caltech101_700-drift-top-100-results-and-scores.csv',index=False)
+        return
+    except:
+        raise NotImplemented("Not implemented")
 
 def load_model(path, iscuda):
     checkpoint = common.load_checkpoint(path, iscuda)
@@ -245,15 +240,3 @@ if __name__ == '__main__':
     res = eval_model(dataset, net, args.trfs, pooling=args.pooling, gemp=args.gemp, detailed=args.detailed,
                      threads=args.threads, dbg=args.dbg, whiten=args.whiten, aqe=args.aqe, adba=args.adba,
                      save_feats=args.save_feats, load_feats=args.load_feats)
-    print(' * ' + '\n * '.join(['%s = %g' % p for p in res.items()]))
-
-    if args.out_json:
-        # write to file
-        try:
-            data = json.load(open(args.out_json))
-        except IOError:
-            data = {}
-        data[args.dataset] = res
-        mkdir(args.out_json)
-        open(args.out_json, 'w').write(json.dumps(data, indent=1))
-        print("saved to "+args.out_json)

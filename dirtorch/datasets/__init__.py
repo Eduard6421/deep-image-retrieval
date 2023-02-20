@@ -1,3 +1,5 @@
+try: from .pascalvoc import *
+except ImportError: pass
 try: from .oxford import *
 except ImportError: pass
 try: from .paris import *
@@ -7,6 +9,8 @@ except ImportError: pass
 try: from .landmarks import Landmarks_clean, Landmarks_clean_val, Landmarks_lite
 except ImportError: pass
 try: from .landmarks18 import *
+except ImportError: pass
+try: from .caltech101 import *
 except ImportError: pass
 
 # create a dataset from a string

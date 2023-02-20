@@ -130,12 +130,16 @@ class ImageListRelevants(Dataset):
     def __init__(self, gt_file, root=None, img_dir='jpg', ext='.jpg'):
         self.root = root
         self.img_dir = img_dir
-
+        
         with open(gt_file, 'rb') as f:
             gt = pickle.load(f)
         self.imgs = [osp.splitext(e)[0] + (osp.splitext(e)[1] if osp.splitext(e)[1] else ext) for e in gt['imlist']]
         self.qimgs = [osp.splitext(e)[0] + (osp.splitext(e)[1] if osp.splitext(e)[1] else ext) for e in gt['qimlist']]
-        self.qroi = [tuple(e['bbx']) for e in gt['gnd']]
+        self.qroi = None
+        try:
+            self.qroi = [tuple(e['bbx']) for e in gt['gnd']]
+        except:
+            print('no bbx')
         if 'ok' in gt['gnd'][0]:
             self.relevants = [e['ok'] for e in gt['gnd']]
         else:
@@ -151,22 +155,26 @@ class ImageListRelevants(Dataset):
         if mode == 'classic':
             rel = self.relevants[qimg_idx]
         elif mode == 'easy':
-            rel = self.easy[qimg_idx]
+            rel = self.easy[qimg_idx] + self.hard[qimg_idx]
         elif mode == 'medium':
             rel = self.easy[qimg_idx] + self.hard[qimg_idx]
         elif mode == 'hard':
-            rel = self.hard[qimg_idx]
+            rel = self.easy[qimg_idx] + self.hard[qimg_idx]
+        elif mode == 'all':
+            rel = self.easy[qimg_idx] + self.hard[qimg_idx]
         return rel
 
     def get_junk(self, qimg_idx, mode='classic'):
         if mode == 'classic':
-            junk = self.junk[qimg_idx]
+            junk = np.array([])
         elif mode == 'easy':
-            junk = self.junk[qimg_idx] + self.hard[qimg_idx]
+            junk = np.array([])
         elif mode == 'medium':
-            junk = self.junk[qimg_idx]
+            junk = np.array([])
         elif mode == 'hard':
-            junk = self.junk[qimg_idx] + self.easy[qimg_idx]
+            junk = np.array([])
+        elif mode == 'all':
+            junk = np.array([])
         return junk
 
     def get_query_filename(self, qimg_idx, root=None):
@@ -185,15 +193,11 @@ class ImageListRelevants(Dataset):
         return ImageListROIs(self.root, self.img_dir, self.qimgs, self.qroi)
 
     def get_query_groundtruth(self, query_idx, what='AP', mode='classic'):
-        # negatives
         res = -np.ones(self.nimg, dtype=np.int8)
-        # positive
         res[self.get_relevants(query_idx, mode)] = 1
-        # junk
-        res[self.get_junk(query_idx, mode)] = 0
         return res
-
-    def eval_query_AP(self, query_idx, scores):
+    
+    def eval_query_AP(self, query_idx, scores, descriptor, q_descriptor, q_im_name, db_im_names):
         """ Evaluates AP for a given query.
         """
         from ..utils.evaluation import compute_average_precision
@@ -204,12 +208,18 @@ class ImageListRelevants(Dataset):
             keep = (gt != 0)  # remove null labels
 
             gt, scores = gt[keep], scores[keep]
+            top_k = 10
+            interested_in = descriptor[(-scores).argsort()][:top_k]
             gt_sorted = gt[np.argsort(scores)[::-1]]
+            
             positive_rank = np.where(gt_sorted == 1)[0]
             return compute_average_precision(positive_rank)
         else:
             d = {}
-            for mode in ('easy', 'medium', 'hard'):
+            rows = {}
+            interested_in_tuple = ()
+            row = None
+            for mode in ('easy', 'medium', 'hard','all'):
                 gt = self.get_query_groundtruth(query_idx, 'AP', mode)  # labels in {-1, 0, 1}
                 assert gt.shape == scores.shape, "scores should have shape %s" % str(gt.shape)
                 assert -1 <= gt.min() and gt.max() <= 1, "bad ground-truth labels"
@@ -217,13 +227,96 @@ class ImageListRelevants(Dataset):
                 if sum(gt[keep] > 0) == 0:  # exclude queries with no relevants from the evaluation
                     d[mode] = -1
                 else:
-                    gt2, scores2 = gt[keep], scores[keep]
+                    gt2, scores2 = gt, scores
+                    top_k = 100
+                    
+                    if(mode == 'medium'):
+                        
+                        max_scores_indices = (-scores).argsort()
+                        max_scores_indices = [k for k in max_scores_indices if keep[k] == True][:top_k]
+                        result_paths = np.array(db_im_names)[max_scores_indices]
+                        result_embeddings = np.array(descriptor)[max_scores_indices,:].tolist()
+                        result_scores = scores2[max_scores_indices]
+                        
+                        row = {
+                        'query_path' :q_im_name,
+                         'results_path': result_paths,
+                        'query_emb': q_descriptor,
+                        'result_emb': result_embeddings,
+                        'scores': result_scores
+                        }
+                    
                     gt_sorted = gt2[np.argsort(scores2)[::-1]]
                     positive_rank = np.where(gt_sorted == 1)[0]
                     d[mode] = compute_average_precision(positive_rank)
-            return d
+            
+            print("{},{}".format(q_im_name,d['all']))
+            return d,row
 
 
+        
+    def eval_query_top_k(self, query_idx, scores, descriptor, q_descriptor, q_im_name, db_im_names, k = 100):
+        """ Evaluates AP for a given query.
+        """
+        from ..utils.evaluation import compute_average_precision
+        if self.relevants:
+            gt = self.get_query_groundtruth(query_idx, 'AP')  # labels in {-1, 0, 1}
+            assert gt.shape == scores.shape, "scores should have shape %s" % str(gt.shape)
+            assert -1 <= gt.min() and gt.max() <= 1, "bad ground-truth labels"
+            keep = (gt != 0)  # remove null labels
+
+            gt, scores = gt[keep], scores[keep]
+            top_k = 10
+            interested_in = descriptor[(-scores).argsort()][:top_k]
+            gt_sorted = gt[np.argsort(scores)[::-1]]
+            
+            positive_rank = np.where(gt_sorted == 1)[0]
+            return compute_average_precision(positive_rank)
+        else:
+            d = {}
+            rows = {}
+            interested_in_tuple = ()
+            row = None
+            for mode in ('easy', 'medium', 'hard','all'):
+                gt = self.get_query_groundtruth(query_idx, 'AP', mode)  # labels in {-1, 0, 1}
+                assert gt.shape == scores.shape, "scores should have shape %s" % str(gt.shape)
+                assert -1 <= gt.min() and gt.max() <= 1, "bad ground-truth labels"
+                keep = (gt != 0)  # remove null labels
+                if sum(gt[keep] > 0) == 0:  # exclude queries with no relevants from the evaluation
+                    d[mode] = -1
+                else:
+                    gt2, scores2 = gt, scores
+                    top_k = 100
+                    
+                    if(mode == 'medium'):
+                        max_scores_indices = (-scores).argsort()
+                        max_scores_indices = [k for k in max_scores_indices if keep[k] == True][:top_k]
+                        result_paths = np.array(db_im_names)[max_scores_indices]
+                        result_embeddings = np.array(descriptor)[max_scores_indices,:].tolist()
+                        result_scores = scores2[max_scores_indices]
+                        
+                        row = {
+                        'query_path' :q_im_name,
+                         'results_path': result_paths,
+                        'query_emb': q_descriptor,
+                        'result_emb': result_embeddings,
+                        'scores': result_scores
+                        }
+                    
+                    gt_sorted = gt2[np.argsort(scores2)[::-1]]
+                    gt_sorted = gt_sorted[:k]
+                    gt_sorted = np.array(gt_sorted)
+                    
+                    match_positions, = np.where(gt_sorted == 1)
+                    
+                    num_matches = len(match_positions)
+                    
+                    d[mode] = num_matches / k
+                    
+            print("{},{}".format(q_im_name,d['all']))
+            return d,row 
+        
+        
 class ImageListROIs(Dataset):
     def __init__(self, root, img_dir, imgs, rois):
         self.root = root
@@ -244,7 +337,8 @@ class ImageListROIs(Dataset):
     def get_image(self, img_idx, resize=None):
         from PIL import Image
         img = Image.open(self.get_filename(img_idx)).convert('RGB')
-        img = img.crop(self.rois[img_idx])
+        if(self.rois and not None in self.rois[img_idx]):
+            img = img.crop(self.rois[img_idx])
         if resize:
             img = img.resize(resize, Image.ANTIALIAS if np.prod(resize) < np.prod(img.size) else Image.BICUBIC)
         return img

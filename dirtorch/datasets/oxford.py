@@ -10,5 +10,11 @@ class Oxford5K(ImageListRelevants):
 
 class ROxford5K(ImageListRelevants):
     def __init__(self):
-        ImageListRelevants.__init__(self, os.path.join(DB_ROOT, 'oxford5k/gnd_roxford5k.pkl'),
-                                 root=os.path.join(DB_ROOT, 'oxford5k'))
+        ImageListRelevants.__init__(self, os.path.join(DB_ROOT, 'roxford5k/gnd_roxford5k.pkl'),
+                                 root=os.path.join(DB_ROOT, 'roxford5k'))
+
+        
+class ROxford5K_Drift(ImageListRelevants):
+    def __init__(self):
+                ImageListRelevants.__init__(self, os.path.join(DB_ROOT, 'roxford5k/gnd_roxford5k_drift_deep.pkl'),
+                                 root=os.path.join(DB_ROOT, 'roxford5k'))

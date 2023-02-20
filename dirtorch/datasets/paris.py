@@ -10,5 +10,11 @@ class Paris6K(ImageListRelevants):
 
 class RParis6K(ImageListRelevants):
     def __init__(self):
-        ImageListRelevants.__init__(self, os.path.join(DB_ROOT, 'paris6k/gnd_rparis6k.pkl'),
-                                 root=os.path.join(DB_ROOT, 'paris6k'))
+        ImageListRelevants.__init__(self, os.path.join(DB_ROOT, 'rparis6k/gnd_rparis6k.pkl'),
+                                 root=os.path.join(DB_ROOT, 'rparis6k'))
+
+        
+class RParis6K_Drift(ImageListRelevants):
+    def __init__(self):
+                ImageListRelevants.__init__(self, os.path.join(DB_ROOT, 'rparis6k/gnd_rparis6k_drift_deep.pkl'),
+                                 root=os.path.join(DB_ROOT, 'rparis6k'))
