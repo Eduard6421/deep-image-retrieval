@@ -2,7 +2,7 @@ import os
 import json
 import pdb
 import numpy as np
-import pickle
+import pickle5 as pickle
 import os.path as osp
 import json
 

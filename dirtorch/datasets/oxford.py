@@ -1,20 +1,22 @@
 import os
+
+from dirtorch.utils.path_utils import get_data_root
 from .generic import ImageListRelevants
 
-DB_ROOT = os.environ['DB_ROOT']
+
 
 class Oxford5K(ImageListRelevants):
     def __init__(self):
-        ImageListRelevants.__init__(self, os.path.join(DB_ROOT, 'oxford5k/gnd_oxford5k.pkl'),
-                                 root=os.path.join(DB_ROOT, 'oxford5k'))
+        ImageListRelevants.__init__(self, os.path.join(get_data_root(), 'oxford5k/gnd_oxford5k.pkl'),
+                                 root=os.path.join(get_data_root(), 'oxford5k'))
 
 class ROxford5K(ImageListRelevants):
     def __init__(self):
-        ImageListRelevants.__init__(self, os.path.join(DB_ROOT, 'roxford5k/gnd_roxford5k.pkl'),
-                                 root=os.path.join(DB_ROOT, 'roxford5k'))
+        ImageListRelevants.__init__(self, os.path.join(get_data_root(), 'roxford5k/gnd_roxford5k.pkl'),
+                                 root=os.path.join(get_data_root(), 'roxford5k'))
 
         
 class ROxford5K_Drift(ImageListRelevants):
     def __init__(self):
-                ImageListRelevants.__init__(self, os.path.join(DB_ROOT, 'roxford5k/gnd_roxford5k_drift_deep.pkl'),
-                                 root=os.path.join(DB_ROOT, 'roxford5k'))
+                ImageListRelevants.__init__(self, os.path.join(get_data_root(), 'roxford5k/gnd_roxford5k_drift_deep.pkl'),
+                                 root=os.path.join(get_data_root(), 'roxford5k'))

@@ -6,6 +6,7 @@ import pdb
 import json
 import tqdm
 import numpy as np
+from dirtorch.utils.path_utils import get_data_root, get_embedding_root, get_embedding_subfolder, get_model_root, get_results_root
 import torch
 import torch.nn.functional as F
 
@@ -20,6 +21,11 @@ import dirtorch.datasets.downloader as dl
 import pickle as pkl
 import hashlib
 import pandas as pd
+import os
+def warn(*args, **kwargs):
+    pass
+import warnings
+warnings.warn = warn
 
 def expand_descriptors(descs, db=None, alpha=0, k=0):
     assert k >= 0 and alpha >= 0, 'k and alpha must be non-negative'
@@ -53,6 +59,8 @@ def extract_image_features(dataset, transforms, net, ret_imgs=False, same_size=F
         batch_size = 1
         old_benchmark = torch.backends.cudnn.benchmark
         torch.backends.cudnn.benchmark = False
+
+    print(dataset)
 
     loader = get_loader(dataset, trf_chain=transforms, preprocess=net.preprocess, iscuda=iscuda,
                         output=['img'], batch_size=batch_size, threads=threads, shuffle=False)
@@ -155,10 +163,13 @@ def eval_model(db, net, trfs, pooling='mean', gemp=3, detailed=False, whiten=Non
         bdescs = expand_descriptors(bdescs, **args.adba)
     if aqe is not None:
         qdescs = expand_descriptors(qdescs, db=bdescs, **args.aqe)
-        
-        
-    #generate_embedding_file(db_image_names, bdescs, '/notebooks/Embeddings/DEEP_Image_Retrieval/caltech101_700_train-dataset-features.csv')
-    #generate_embedding_file(q_image_names, qdescs, '/notebooks/Embeddings/DEEP_Image_Retrieval/caltech101_700_train-query-features.csv')
+
+    dataset_name = args.dataset.lower()
+    dataset_embedding_path = os.path.join(get_embedding_subfolder(), "{}-dataset-features.csv".format(dataset_name))
+    query_embedding_path = os.path.join(get_embedding_subfolder(), "{}-query-features.csv".format(dataset_name))
+
+    generate_embedding_file(db_image_names, bdescs, dataset_embedding_path)
+    generate_embedding_file(q_image_names, qdescs, query_embedding_path)
 
     scores = matmul(qdescs, bdescs)
 
@@ -170,7 +181,9 @@ def eval_model(db, net, trfs, pooling='mean', gemp=3, detailed=False, whiten=Non
         for q,s in enumerate(scores):
             row = db.eval_query_AP(q, s, bdescs,qdescs[q], q_image_names[q],db_image_names)[1]
             df = pd.concat([df, pd.DataFrame.from_records([row])])
-        #df.to_csv('/notebooks/Embeddings/DEEP_Image_Retrieval/caltech101_700-drift-top-100-results-and-scores.csv',index=False)
+        
+        top_100_results_path = os.path.join(get_results_root(), "{}-top-100-results-and-scores.csv".format(dataset_name))
+        df.to_csv(top_100_results_path,index=False)
         return
     except:
         raise NotImplemented("Not implemented")
@@ -187,11 +200,30 @@ def load_model(path, iscuda):
 
 
 if __name__ == '__main__':
+
+    os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+
+    if not os.path.exists(get_data_root()):
+        os.makedirs(get_data_root())
+
+    if not os.path.exists(get_embedding_root()):
+        os.makedirs(get_embedding_root())
+        os.makedir(get_embedding_root())
+    
+    if not os.path.exists(get_model_root()):
+        os.makedirs(get_model_root())
+    
+    if not os.path.exists(get_results_root()):
+        os.makedirs(get_results_root())
+        os.makedirs(get_embedding_subfolder())
+
+
+
     import argparse
     parser = argparse.ArgumentParser(description='Evaluate a model')
 
     parser.add_argument('--dataset', '-d', type=str, required=True, help='Command to load dataset')
-    parser.add_argument('--checkpoint', type=str, required=True, help='path to weights')
+    #parser.add_argument('--checkpoint', type=str, required=False, help='path to weights')
 
     parser.add_argument('--trfs', type=str, required=False, default='', nargs='+', help='test transforms (can be several)')
     parser.add_argument('--pooling', type=str, default="gem", help='pooling scheme if several trf chains')
@@ -215,6 +247,14 @@ if __name__ == '__main__':
     parser.add_argument('--whitenv', type=int, default=None, help='number of components, default is None (i.e. all components)')
     parser.add_argument('--whitenm', type=float, default=1.0, help='whitening multiplier, default is 1.0 (i.e. no multiplication)')
 
+    os.environ['DB_ROOT']  = get_data_root()
+
+    checkpoint_path = os.path.join(os.path.join(get_model_root(),'networks'),'Resnet-101-AP-GeM.pt')
+
+    if(not(os.path.exists(checkpoint_path))):
+        raise Exception('Checkpoint {} does not exist'.format(checkpoint_path))
+
+    
     args = parser.parse_args()
     args.iscuda = common.torch_set_gpu(args.gpu)
     if args.aqe is not None:
@@ -227,7 +267,7 @@ if __name__ == '__main__':
     dataset = datasets.create(args.dataset)
     print("Test dataset:", dataset)
 
-    net = load_model(args.checkpoint, args.iscuda)
+    net = load_model(checkpoint_path, args.iscuda)
 
     if args.whiten:
         net.pca = net.pca[args.whiten]

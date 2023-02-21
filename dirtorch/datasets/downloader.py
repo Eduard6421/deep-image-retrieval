@@ -1,25 +1,39 @@
 import os
 import os.path as osp
 
-DB_ROOT = os.environ['DB_ROOT']
+from dirtorch.utils.path_utils import get_data_root
+
 
 def download_dataset(dataset):
-    if not os.path.isdir(DB_ROOT):
-        os.makedirs(DB_ROOT)
+    if not os.path.isdir(get_data_root()):
+        os.makedirs(get_data_root())
 
     dataset = dataset.lower()
-    if dataset in ('oxford5k', 'roxford5k'):
+    print(dataset)
+    if dataset in ('oxford5k', 'roxford5k','roxford5k_drift'):
         src_dir = 'http://www.robots.ox.ac.uk/~vgg/data/oxbuildings'
         dl_files = ['oxbuild_images.tgz']
         dir_name = 'oxford5k'
-    elif dataset in ('paris6k', 'rparis6k'):
+    elif dataset in ('paris6k', 'rparis6k','rparis6k_drift'):
         src_dir = 'http://www.robots.ox.ac.uk/~vgg/data/parisbuildings'
         dl_files = ['paris_1.tgz', 'paris_2.tgz']
         dir_name = 'paris6k'
+    elif dataset in ['pascalvoc','pascalvoc_70','pascalvoc_140','pascalvoc_350','pascalvoc_700','pascalvoc_1400','pascalvoc_700_no_bbx',
+                    'pascalvoc_700_medium','pascalvoc_700_train','pascalvoc_700_medium_train','pascalvoc_700_no_bbx_train',
+                    'pascalvoc_700_drift','pascalvoc_700_medium_drift','pascalvoc_700_no_bbx_drift'
+                    ]:
+        dir_name = 'pascalvoc'
+        dl_files =['pascal.tgz']
+        src_dir = 'no data here'
+    elif dataset in ['caltech101_70','caltech101_350','caltech101_700','caltech101_1400','caltech101_700_train','caltech101_700_drift']:
+        dir_name = 'caltech101'
+        dl_files = ['caltech.tgz']
+        src_dir = 'no data here'
     else:
+        print(dataset)
         raise ValueError('Unknown dataset: {}!'.format(dataset))
 
-    dst_dir = os.path.join(DB_ROOT, dir_name, 'jpg')
+    dst_dir = os.path.join(get_data_root(), dir_name, 'jpg')
     if not os.path.isdir(dst_dir):
         print('>> Dataset {} directory does not exist. Creating: {}'.format(dataset, dst_dir))
         os.makedirs(dst_dir)
@@ -43,7 +57,7 @@ def download_dataset(dataset):
             os.system('rm {}'.format(dst_file))
 
     gnd_src_dir = os.path.join('http://cmp.felk.cvut.cz/cnnimageretrieval/data', 'test', dataset)
-    gnd_dst_dir = os.path.join(DB_ROOT, dir_name)
+    gnd_dst_dir = os.path.join(get_data_root(), dir_name)
     gnd_dl_file = 'gnd_{}.pkl'.format(dataset)
     gnd_src_file = os.path.join(gnd_src_dir, gnd_dl_file)
     gnd_dst_file = os.path.join(gnd_dst_dir, gnd_dl_file)

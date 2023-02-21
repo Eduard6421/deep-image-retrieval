@@ -159,7 +159,7 @@ class PytorchLoader (data.Dataset):
 
         for o in self.output:
             assert img_and_label.get(o) is not None, "Missing field %s for img %s" % (o,img_filename)
-        return [img_and_label[o] for o in self.output]
+        return [img_and_label[o] for o in self.output], img_filename
 
     def __len__(self):
         return len(self.dataset)
