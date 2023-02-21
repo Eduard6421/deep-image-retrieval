@@ -180,6 +180,7 @@ def eval_model(db, net, trfs, pooling='mean', gemp=3, detailed=False, whiten=Non
     try:
         for q,s in enumerate(scores):
             row = db.eval_query_AP(q, s, bdescs,qdescs[q], q_image_names[q],db_image_names)[1]
+            # row = db.eval_query_top_k(q, s, bdescs,qdescs[q], q_image_names[q],db_image_names)[1]
             df = pd.concat([df, pd.DataFrame.from_records([row])])
         
         top_100_results_path = os.path.join(get_results_root(), "{}-top-100-results-and-scores.csv".format(dataset_name))
